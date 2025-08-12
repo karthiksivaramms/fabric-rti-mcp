@@ -15,14 +15,46 @@ on:
         description: 'Azure location (region)'
         required: false
         default: 'eastus'
+      use_simple_template:
+        description: 'Use simplified template (recommended)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Azure secrets
+        run: |
+          echo "Checking required secrets..."
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+            echo "❌ AZURE_CLIENT_ID secret is missing"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "❌ AZURE_TENANT_ID secret is missing"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo "❌ AZURE_SUBSCRIPTION_ID secret is missing"
+            exit 1
+          fi
+          echo "✅ All required secrets are configured"
+
   deploy:
     runs-on: ubuntu-latest
+    needs: validate
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,22 +66,52 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Ensure resource group and deploy
+      - name: Deploy infrastructure
         uses: azure/cli@v2
         with:
           inlineScript: |
             set -e
             RG_INPUT='${{ github.event.inputs.resource_group }}'
             LOC_INPUT='${{ github.event.inputs.location }}'
+            USE_SIMPLE='${{ github.event.inputs.use_simple_template }}'
             RG_DEFAULT='rg-fabric-rti-mcp'
             LOC_DEFAULT='eastus'
             RG=${RG_INPUT:-$RG_DEFAULT}
             LOC=${LOC_INPUT:-$LOC_DEFAULT}
-            echo "Using resource group: $RG"
-            echo "Using location: $LOC"
+            SIMPLE=${USE_SIMPLE:-true}
+            
+            echo "🚀 Starting infrastructure deployment..."
+            echo "📍 Resource group: $RG"
+            echo "🌍 Location: $LOC"
+            echo "📋 Simple template: $SIMPLE"
+            
+            # Create resource group
+            echo "📦 Creating resource group..."
             az group create -n "$RG" -l "$LOC"
+            
+            # Choose template based on input
+            if [ "$SIMPLE" = "true" ]; then
+              echo "🔧 Using simplified template (recommended)"
+              TEMPLATE_FILE="infra/main-simple.bicep"
+              PARAMS_FILE="infra/main-simple.parameters.json"
+            else
+              echo "⚠️  Using experimental Fabric ARM template"
+              TEMPLATE_FILE="infra/main.bicep"
+              PARAMS_FILE="infra/main.parameters.json"
+            fi
+            
+            # Deploy template
+            echo "🚀 Deploying template: $TEMPLATE_FILE"
             az deployment group create \
               --resource-group "$RG" \
-              --template-file infra/main.bicep \
-              --parameters @infra/main.parameters.json \
-              --parameters location="$LOC"
+              --template-file "$TEMPLATE_FILE" \
+              --parameters @"$PARAMS_FILE" \
+              --parameters location="$LOC" \
+              --verbose
+            
+            echo "✅ Infrastructure deployment completed!"
+            echo ""
+            echo "📋 Next steps:"
+            echo "1. Set up your Fabric workspace at https://fabric.microsoft.com"
+            echo "2. Run the fabric-provision script to create RTI items"
+            echo "3. Deploy the container app using the build-and-release workflow"

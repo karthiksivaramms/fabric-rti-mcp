@@ -6,7 +6,7 @@
     "eventstreamName": { "value": "my-eventstream" },
     "eventhouseName": { "value": "my-eventhouse" },
     "activatorName": { "value": "my-activator" },
-  "managedIdentityName": { "value": "my-fabric-identity" },
-  "deployFabricViaArm": { "value": false }
+    "managedIdentityName": { "value": "my-fabric-identity" },
+    "deployFabricViaArm": { "value": false }
   }
 }
