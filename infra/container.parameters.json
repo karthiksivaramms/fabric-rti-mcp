@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "containerAppName": { "value": "telemetry-ingestor" },
+    "containerEnvironmentName": { "value": "telemetry-env" },
+    "containerRegistryName": { "value": "telemetryregkm001" },
+    "logAnalyticsWorkspaceName": { "value": "telemetry-logs" },
+    "managedIdentityName": { "value": "telemetry-identity" },
+    "imageName": { "value": "telemetry-ingestor" },
+    "imageTag": { "value": "latest" }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "fabricWorkspaceName": { "value": "my-fabric-workspace" },
+    "eventstreamName": { "value": "my-eventstream" },
+    "eventhouseName": { "value": "my-eventhouse" },
+    "activatorName": { "value": "my-activator" },
+  "managedIdentityName": { "value": "my-fabric-identity" },
+  "deployFabricViaArm": { "value": false }
+  }
+}

@@ -1,0 +1,55 @@
+name: deploy-infra
+
+on:
+  push:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/deploy-infra.yml'
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: 'Azure Resource Group name'
+        required: false
+        default: 'rg-fabric-rti-mcp'
+      location:
+        description: 'Azure location (region)'
+        required: false
+        default: 'eastus'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group and deploy
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            set -e
+            RG_INPUT='${{ github.event.inputs.resource_group }}'
+            LOC_INPUT='${{ github.event.inputs.location }}'
+            RG_DEFAULT='rg-fabric-rti-mcp'
+            LOC_DEFAULT='eastus'
+            RG=${RG_INPUT:-$RG_DEFAULT}
+            LOC=${LOC_INPUT:-$LOC_DEFAULT}
+            echo "Using resource group: $RG"
+            echo "Using location: $LOC"
+            az group create -n "$RG" -l "$LOC"
+            az deployment group create \
+              --resource-group "$RG" \
+              --template-file infra/main.bicep \
+              --parameters @infra/main.parameters.json \
+              --parameters location="$LOC"

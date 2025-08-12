@@ -1,0 +1,45 @@
+name: fabric-provision
+
+on:
+  workflow_dispatch:
+    inputs:
+      fabric_workspace_id:
+        description: 'Fabric workspace ID'
+        required: true
+      eventstream_name:
+        description: 'Eventstream item name'
+        required: false
+        default: 'eventstream'
+      eventhouse_name:
+        description: 'Eventhouse (KQL database) item name'
+        required: false
+        default: 'eventhouse'
+      activator_name:
+        description: 'Activator item name'
+        required: false
+        default: 'activator'
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: tools/fabric-provision/package.json
+      - name: Install deps
+        run: npm ci
+        working-directory: tools/fabric-provision
+      - name: Run provision script
+        env:
+          FABRIC_TENANT_ID: ${{ secrets.FABRIC_TENANT_ID }}
+          FABRIC_CLIENT_ID: ${{ secrets.FABRIC_CLIENT_ID }}
+          FABRIC_CLIENT_SECRET: ${{ secrets.FABRIC_CLIENT_SECRET }}
+          FABRIC_WORKSPACE_ID: ${{ inputs.fabric_workspace_id }}
+          EVENTSTREAM_ITEM_NAME: ${{ inputs.eventstream_name }}
+          EVENTHOUSE_ITEM_NAME: ${{ inputs.eventhouse_name }}
+          ACTIVATOR_ITEM_NAME: ${{ inputs.activator_name }}
+        run: npm run provision
+        working-directory: tools/fabric-provision

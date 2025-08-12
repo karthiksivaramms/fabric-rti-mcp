@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "containerEnvironmentName": {
+      "value": "cae-fabric-rti-mcp"
+    },
+    "testerAppName": {
+      "value": "mcp-tester-ui"
+    },
+    "testerImage": {
+      "value": "telemetryregkm001.azurecr.io/mcp-tester-ui:latest"
+    },
+    "testerTargetPort": {
+      "value": 3001
+    },
+    "testerCpu": {
+      "value": "0.25"
+    },
+    "testerMemory": {
+      "value": "0.5Gi"
+    },
+    "testerMinReplicas": {
+      "value": 1
+    },
+    "testerMaxReplicas": {
+      "value": 3
+    },
+    "tags": {
+      "value": {
+        "project": "fabric-rti-mcp",
+        "component": "tester-ui",
+        "environment": "production"
+      }
+    }
+  }
+}

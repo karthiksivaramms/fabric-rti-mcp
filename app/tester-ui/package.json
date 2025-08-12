@@ -1,0 +1,41 @@
+{
+  "name": "fabric-rti-mcp-tester",
+  "version": "1.0.0",
+  "description": "Web UI for testing and configuring the Fabric RTI MCP Telemetry Client",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "npm run build:css",
+    "build:css": "tailwindcss -i ./public/styles/input.css -o ./public/styles/output.css --watch"
+  },
+  "keywords": [
+    "microsoft-fabric",
+    "mcp-client", 
+    "telemetry",
+    "testing",
+    "ui"
+  ],
+  "author": "Karthik Murugesan",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2",
+    "@azure/identity": "^4.0.1",
+    "winston": "^3.11.0",
+    "joi": "^17.11.0",
+    "uuid": "^9.0.1",
+    "express-rate-limit": "^7.1.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "tailwindcss": "^3.3.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

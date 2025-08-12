@@ -1,0 +1,143 @@
+name: build-and-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  id-token: write
+  contents: write
+  packages: write
+
+env:
+  REGISTRY_NAME: telemetryregkm001
+  IMAGE_NAME: telemetry-ingestor
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get ACR login server
+        id: acr-login
+        run: |
+          RG_INPUT='${{ vars.RESOURCE_GROUP }}'
+          RG_DEFAULT='rg-fabric-rti-mcp'
+          RG=${RG_INPUT:-$RG_DEFAULT}
+          LOGIN_SERVER=$(az acr show --name $REGISTRY_NAME --resource-group $RG --query loginServer --output tsv)
+          echo "login-server=$LOGIN_SERVER" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ steps.acr-login.outputs.login-server }}
+          username: ${{ secrets.AZURE_CLIENT_ID }}
+          password: ${{ secrets.AZURE_CLIENT_SECRET }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.acr-login.outputs.login-server }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/telemetry-ingestor
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-container-app:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Container App
+        run: |
+          RG_INPUT='${{ vars.RESOURCE_GROUP }}'
+          LOC_INPUT='${{ vars.AZURE_LOCATION }}'
+          RG_DEFAULT='rg-fabric-rti-mcp'
+          LOC_DEFAULT='eastus'
+          RG=${RG_INPUT:-$RG_DEFAULT}
+          LOC=${LOC_INPUT:-$LOC_DEFAULT}
+          
+          TAG_REF='${{ github.ref_name }}'
+          TAG_INPUT='${{ github.event.inputs.tag }}'
+          IMAGE_TAG=${TAG_INPUT:-$TAG_REF}
+          IMAGE_TAG=${IMAGE_TAG#v}  # Remove 'v' prefix if present
+          
+          echo "Deploying to resource group: $RG"
+          echo "Using location: $LOC"
+          echo "Using image tag: $IMAGE_TAG"
+          
+          az group create -n "$RG" -l "$LOC"
+          az deployment group create \
+            --resource-group "$RG" \
+            --template-file infra/container.bicep \
+            --parameters @infra/container.parameters.json \
+            --parameters location="$LOC" \
+            --parameters imageTag="$IMAGE_TAG"
+
+  create-release:
+    needs: [build-and-push, deploy-container-app]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            ## Changes
+            
+            Container image: `${{ needs.build-and-push.outputs.image-tag }}`
+            
+            ### Deployment
+            The telemetry ingestor has been deployed to Azure Container Apps.
+            
+            ### Usage
+            Send telemetry via HTTP POST to the deployed container app endpoint at `/ingest`.
+            
+            See the [README](README.md) for configuration and usage details.
+          draft: false
+          prerelease: false

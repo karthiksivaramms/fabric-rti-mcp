@@ -1,0 +1,14 @@
+{
+  "name": "fabric-provision",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "provision": "node ./index.js"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.1",
+    "cross-fetch": "^4.0.0",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -1,0 +1,213 @@
+name: Build and Deploy Tester UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/tester-ui/**'
+      - 'infra/tester-ui.*'
+      - '.github/workflows/tester-ui.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/tester-ui/**'
+      - 'infra/tester-ui.*'
+      - '.github/workflows/tester-ui.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY_NAME: telemetryregkm001
+  RESOURCE_GROUP: rg-fabric-rti-mcp
+  CONTAINER_APP_NAME: mcp-tester-ui
+  IMAGE_NAME: mcp-tester-ui
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.image.outputs.tag }}
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Log in to Azure Container Registry
+      run: |
+        az acr login --name ${{ env.REGISTRY_NAME }}
+
+    - name: Generate image tag
+      id: image
+      run: |
+        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          TAG="latest"
+        else
+          TAG="pr-${{ github.event.number }}-$(echo ${{ github.sha }} | cut -c1-8)"
+        fi
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Generated tag: $TAG"
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./app/tester-ui
+        push: true
+        tags: |
+          ${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.image.outputs.tag }}
+          ${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Deploy Bicep template
+      run: |
+        az deployment group create \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --template-file infra/tester-ui.bicep \
+          --parameters @infra/tester-ui.parameters.json \
+          --parameters testerImage=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
+
+    - name: Get tester UI URL
+      id: get-url
+      run: |
+        URL=$(az containerapp show \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --query "properties.configuration.ingress.fqdn" \
+          --output tsv)
+        echo "TESTER_URL=https://$URL" >> $GITHUB_OUTPUT
+        echo "Tester UI deployed to: https://$URL"
+
+    - name: Update container app with new image
+      run: |
+        az containerapp update \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --image ${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}
+
+    - name: Wait for deployment
+      run: |
+        echo "Waiting for deployment to complete..."
+        sleep 30
+        
+        # Check if the app is responding
+        URL="${{ steps.get-url.outputs.TESTER_URL }}"
+        for i in {1..10}; do
+          if curl -f -s "$URL/api/test/results" > /dev/null; then
+            echo "✅ Tester UI is responding!"
+            break
+          else
+            echo "⏳ Waiting for tester UI to be ready... (attempt $i/10)"
+            sleep 30
+          fi
+          
+          if [ $i -eq 10 ]; then
+            echo "❌ Tester UI deployment verification failed"
+            exit 1
+          fi
+        done
+
+    - name: Post deployment summary
+      run: |
+        echo "## 🧪 MCP Tester UI Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Component | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Tester UI URL** | [${{ steps.get-url.outputs.TESTER_URL }}](${{ steps.get-url.outputs.TESTER_URL }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Container Image** | \`${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image-tag }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Resource Group** | \`${{ env.RESOURCE_GROUP }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Container App** | \`${{ env.CONTAINER_APP_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Git Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "1. Visit the [Tester UI](${{ steps.get-url.outputs.TESTER_URL }}) to configure and test your MCP client" >> $GITHUB_STEP_SUMMARY
+        echo "2. Configure your telemetry ingestor URL in the Configuration tab" >> $GITHUB_STEP_SUMMARY
+        echo "3. Test telemetry ingestion using the Testing tab" >> $GITHUB_STEP_SUMMARY
+        echo "4. Explore example telemetry data in the Examples tab" >> $GITHUB_STEP_SUMMARY
+
+  test:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Get tester UI URL
+      id: get-url
+      run: |
+        URL=$(az containerapp show \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --query "properties.configuration.ingress.fqdn" \
+          --output tsv)
+        echo "TESTER_URL=https://$URL" >> $GITHUB_OUTPUT
+
+    - name: Test tester UI endpoints
+      run: |
+        BASE_URL="${{ steps.get-url.outputs.TESTER_URL }}"
+        
+        echo "🧪 Testing Tester UI endpoints..."
+        
+        # Test health endpoint
+        echo "Testing /api/test/results endpoint..."
+        if curl -f -s "$BASE_URL/api/test/results" | jq '.success' | grep -q true; then
+          echo "✅ Results endpoint is working"
+        else
+          echo "❌ Results endpoint failed"
+          exit 1
+        fi
+        
+        # Test examples endpoint
+        echo "Testing /api/examples/telemetry endpoint..."
+        if curl -f -s "$BASE_URL/api/examples/telemetry" | jq '.success' | grep -q true; then
+          echo "✅ Examples endpoint is working"
+        else
+          echo "❌ Examples endpoint failed"
+          exit 1
+        fi
+        
+        # Test main UI page
+        echo "Testing main UI page..."
+        if curl -f -s "$BASE_URL/" | grep -q "Fabric RTI MCP Tester"; then
+          echo "✅ Main UI page is loading"
+        else
+          echo "❌ Main UI page failed"
+          exit 1
+        fi
+        
+        echo "🎉 All tests passed!"

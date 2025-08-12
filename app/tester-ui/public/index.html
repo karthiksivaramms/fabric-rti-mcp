@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric RTI MCP Tester - Configuration & Testing UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-slow': 'bounce 2s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.2/dist/axios.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .bg-gradient-primary { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+        }
+        .bg-gradient-card {
+            background: linear-gradient(145deg, #f8fafc 0%, #e2e8f0 100%);
+        }
+        .glass { 
+            backdrop-filter: blur(10px); 
+            background: rgba(255, 255, 255, 0.1); 
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .status-indicator {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .card-shadow {
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        .input-focus:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        /* Loading animation */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* Success/Error message styles */
+        .message-slide {
+            animation: slideInDown 0.3s ease-out;
+        }
+        @keyframes slideInDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 bg-gradient-primary flex items-center justify-center z-50">
+        <div class="text-center text-white">
+            <div class="loading mx-auto mb-4"></div>
+            <h2 class="text-2xl font-bold">Loading MCP Tester UI</h2>
+            <p class="text-blue-100 mt-2">Initializing your testing environment...</p>
+        </div>
+    </div>
+
+    <div x-data="mcpTester()" x-cloak class="min-h-screen" x-init="setTimeout(() => document.getElementById('loading-screen').style.display = 'none', 1000)">
+        <!-- Header -->
+        <header class="bg-gradient-primary text-white shadow-lg sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+                    <div class="mb-4 lg:mb-0">
+                        <h1 class="text-2xl lg:text-3xl font-bold flex items-center">
+                            <span class="mr-3">🧪</span>
+                            Fabric RTI MCP Tester
+                        </h1>
+                        <p class="text-blue-100 mt-1 text-sm lg:text-base">Configure and test your Microsoft Fabric Real-Time Intelligence MCP client</p>
+                    </div>
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-6">
+                        <!-- Connection Status -->
+                        <div class="text-center sm:text-right">
+                            <div class="text-xs text-blue-100 mb-1">Connection Status</div>
+                            <div class="flex items-center justify-center sm:justify-end">
+                                <div :class="{
+                                    'bg-green-400': connectionStatus === 'connected',
+                                    'bg-yellow-400': connectionStatus === 'testing',
+                                    'bg-red-400': connectionStatus === 'disconnected'
+                                }" 
+                                     class="w-3 h-3 rounded-full mr-2 status-indicator"></div>
+                                <span class="text-sm font-medium capitalize" x-text="connectionStatus"></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Navigation Tabs -->
+                        <div class="flex space-x-2">
+                            <button @click="activeTab = 'config'" 
+                                    :class="activeTab === 'config' ? 'bg-white bg-opacity-20 text-white' : 'text-blue-100 hover:bg-white hover:bg-opacity-10 hover:text-white'"
+                                    class="px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium">
+                                🔧 Configure
+                            </button>
+                            <button @click="activeTab = 'test'" 
+                                    :class="activeTab === 'test' ? 'bg-white bg-opacity-20 text-white' : 'text-blue-100 hover:bg-white hover:bg-opacity-10 hover:text-white'"
+                                    class="px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium">
+                                🧪 Test
+                            </button>
+                            <button @click="activeTab = 'examples'" 
+                                    :class="activeTab === 'examples' ? 'bg-white bg-opacity-20 text-white' : 'text-blue-100 hover:bg-white hover:bg-opacity-10 hover:text-white'"
+                                    class="px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium">
+                                📚 Examples
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+            <!-- Configuration Tab -->
+            <div x-show="activeTab === 'config'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform scale-95" x-transition:enter-end="opacity-100 transform scale-100">
+                <div class="space-y-6">
+                    <!-- Main Configuration Card -->
+                    <div class="bg-white rounded-xl card-shadow p-6 lg:p-8">
+                        <div class="flex items-center mb-6">
+                            <div class="bg-blue-100 p-3 rounded-lg mr-4">
+                                <span class="text-2xl">🔧</span>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900">MCP Client Configuration</h2>
+                                <p class="text-gray-600 mt-1">Configure your telemetry ingestor and Azure settings</p>
+                            </div>
+                        </div>
+                        
+                        <form @submit.prevent="saveConfiguration" class="space-y-6">
+                            <!-- Telemetry Ingestor URL -->
+                            <div class="space-y-2">
+                                <label class="block text-sm font-semibold text-gray-700">
+                                    <span class="flex items-center">
+                                        <span class="text-red-500 mr-1">*</span>
+                                        Telemetry Ingestor URL
+                                    </span>
+                                </label>
+                                <input type="url" x-model="config.telemetryIngestorUrl" required
+                                       placeholder="https://your-app.azurecontainerapps.io"
+                                       class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg input-focus transition-all duration-200 focus:outline-none">
+                                <p class="text-sm text-gray-500">URL of your deployed telemetry ingestor service</p>
+                            </div>
+
+                            <!-- Azure Configuration -->
+                            <div class="bg-blue-50 p-6 rounded-lg">
+                                <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                    <span class="text-blue-600 mr-2">☁️</span>
+                                    Azure AD Configuration
+                                </h3>
+                                <div class="grid md:grid-cols-2 gap-6">
+                                    <div class="space-y-2">
+                                        <label class="block text-sm font-semibold text-gray-700">
+                                            <span class="flex items-center">
+                                                <span class="text-red-500 mr-1">*</span>
+                                                Azure Tenant ID
+                                            </span>
+                                        </label>
+                                        <input type="text" x-model="config.azureTenantId" required
+                                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                               pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg input-focus transition-all duration-200 focus:outline-none">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="block text-sm font-semibold text-gray-700">
+                                            <span class="flex items-center">
+                                                <span class="text-red-500 mr-1">*</span>
+                                                Azure Client ID
+                                            </span>
+                                        </label>
+                                        <input type="text" x-model="config.azureClientId" required
+                                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                               pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg input-focus transition-all duration-200 focus:outline-none">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Fabric Configuration -->
+                            <div class="bg-purple-50 p-6 rounded-lg">
+                                <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                                    <span class="text-purple-600 mr-2">🎯</span>
+                                    Microsoft Fabric Configuration
+                                    <span class="ml-2 text-sm text-gray-500 font-normal">(Optional)</span>
+                                </h3>
+                                <div class="grid md:grid-cols-2 gap-6">
+                                    <div class="space-y-2">
+                                        <label class="block text-sm font-semibold text-gray-700">
+                                            Fabric Workspace ID
+                                        </label>
+                                        <input type="text" x-model="config.fabricWorkspaceId"
+                                               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                               pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg input-focus transition-all duration-200 focus:outline-none">
+                                        <p class="text-sm text-gray-500">For Fabric workspace integration</p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="block text-sm font-semibold text-gray-700">
+                                            Eventstream Name
+                                        </label>
+                                        <input type="text" x-model="config.eventstreamName"
+                                               placeholder="my-eventstream"
+                                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg input-focus transition-all duration-200 focus:outline-none">
+                                        <p class="text-sm text-gray-500">Name of your Fabric Eventstream</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Test Mode -->
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="checkbox" x-model="config.testMode" 
+                                           class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    <span class="ml-3 flex items-center">
+                                        <span class="text-sm font-medium text-gray-700">Enable test mode</span>
+                                        <span class="ml-2 text-sm text-gray-500">(adds test headers and detailed logging)</span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 pt-4 border-t">
+                                <button type="submit" :disabled="saving"
+                                        class="btn-primary text-white px-6 py-3 rounded-lg font-medium flex items-center justify-center disabled:opacity-50 transition-all duration-200">
+                                    <span x-show="!saving" class="flex items-center">
+                                        <span class="mr-2">💾</span>
+                                        Save Configuration
+                                    </span>
+                                    <span x-show="saving" class="flex items-center">
+                                        <div class="loading mr-2"></div>
+                                        Saving...
+                                    </span>
+                                </button>
+                                <button type="button" @click="testConnection" :disabled="testing || !config.telemetryIngestorUrl"
+                                        class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium disabled:opacity-50 transition-all duration-200 flex items-center justify-center">
+                                    <span x-show="!testing" class="flex items-center">
+                                        <span class="mr-2">🔍</span>
+                                        Test Connection
+                                    </span>
+                                    <span x-show="testing" class="flex items-center">
+                                        <div class="loading mr-2"></div>
+                                        Testing...
+                                    </span>
+                                </button>
+                                <button type="button" @click="loadExampleConfig"
+                                        class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center">
+                                    <span class="mr-2">📝</span>
+                                    Load Example
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- Success/Error Messages -->
+                        <div x-show="configMessage" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 transform translate-y-2" x-transition:enter-end="opacity-100 transform translate-y-0" 
+                             :class="configSuccess ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'"
+                             class="mt-4 p-4 border rounded-lg message-slide">
+                            <div class="flex items-center">
+                                <span x-show="configSuccess" class="mr-2">✅</span>
+                                <span x-show="!configSuccess" class="mr-2">❌</span>
+                                <p x-text="configMessage"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                <!-- Quick Setup Guide -->
+                <div class="bg-blue-50 rounded-xl p-6">
+                    <h3 class="text-lg font-semibold text-blue-900 mb-4">🚀 Quick Setup Guide</h3>
+                    <div class="space-y-3 text-blue-800">
+                        <div class="flex items-start">
+                            <span class="bg-blue-200 text-blue-900 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">1</span>
+                            <div>
+                                <strong>Deploy Infrastructure:</strong> Use the Bicep templates in the <code class="bg-blue-100 px-1 rounded">infra/</code> directory to deploy your Azure Container Apps and Fabric RTI resources.
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="bg-blue-200 text-blue-900 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">2</span>
+                            <div>
+                                <strong>Configure Azure AD:</strong> Set up an app registration in Azure AD with the necessary permissions for Fabric API access.
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="bg-blue-200 text-blue-900 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">3</span>
+                            <div>
+                                <strong>Enter Configuration:</strong> Fill in the form above with your deployment URLs and Azure AD application details.
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="bg-blue-200 text-blue-900 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">4</span>
+                            <div>
+                                <strong>Test Connection:</strong> Use the "Test Connection" button to verify your telemetry ingestor is responding.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Testing Tab -->
+            <div x-show="activeTab === 'test'" class="space-y-6">
+                <div class="grid lg:grid-cols-2 gap-6">
+                    <!-- Test Controls -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-900 mb-6">🧪 Telemetry Testing</h2>
+                        
+                        <!-- Single Test -->
+                        <div class="space-y-4">
+                            <h3 class="text-lg font-semibold text-gray-800">Single Message Test</h3>
+                            <textarea x-model="testData" rows="8" 
+                                      placeholder="Enter JSON telemetry data..."
+                                      class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"></textarea>
+                            <div class="flex space-x-3">
+                                <button @click="sendSingleTest" :disabled="!config.telemetryIngestorUrl || singleTesting"
+                                        class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200 flex items-center">
+                                    <span x-show="!singleTesting">🚀 Send Test</span>
+                                    <span x-show="singleTesting">⏳ Sending...</span>
+                                </button>
+                                <button @click="loadExampleTelemetry"
+                                        class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors duration-200">
+                                    📝 Load Example
+                                </button>
+                                <button @click="validateJson"
+                                        class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200">
+                                    ✅ Validate JSON
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Batch Test -->
+                        <div class="mt-8 pt-6 border-t">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4">Batch Test</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Batch Size</label>
+                                    <input type="number" x-model="batchConfig.size" min="1" max="100" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Interval (ms)</label>
+                                    <input type="number" x-model="batchConfig.interval" min="100" max="10000" 
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                            </div>
+                            <button @click="sendBatchTest" :disabled="!config.telemetryIngestorUrl || batchTesting"
+                                    class="mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors duration-200 flex items-center">
+                                <span x-show="!batchTesting">⚡ Run Batch Test</span>
+                                <span x-show="batchTesting">⏳ Running Batch...</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Test Results -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h2 class="text-2xl font-bold text-gray-900">📊 Test Results</h2>
+                            <button @click="clearResults"
+                                    class="bg-red-600 text-white px-3 py-1 rounded-lg hover:bg-red-700 transition-colors duration-200 text-sm">
+                                Clear Results
+                            </button>
+                        </div>
+                        
+                        <div class="space-y-4 max-h-96 overflow-y-auto">
+                            <template x-for="result in testResults" :key="result.id">
+                                <div class="border rounded-lg p-4" 
+                                     :class="result.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm font-medium" x-text="result.type.replace('_', ' ').toUpperCase()"></span>
+                                        <span class="text-xs text-gray-500" x-text="new Date(result.timestamp).toLocaleTimeString()"></span>
+                                    </div>
+                                    <div class="text-sm">
+                                        <div x-show="result.success" class="text-green-800">
+                                            ✅ Success
+                                            <span x-show="result.responseTime" x-text="'(' + result.responseTime + 'ms)'"></span>
+                                        </div>
+                                        <div x-show="!result.success" class="text-red-800">
+                                            ❌ <span x-text="result.error"></span>
+                                        </div>
+                                        <div x-show="result.response" class="mt-2 p-2 bg-gray-100 rounded text-xs font-mono">
+                                            <pre x-text="JSON.stringify(result.response, null, 2)"></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="testResults.length === 0" class="text-center text-gray-500 py-8">
+                                No test results yet. Run a test to see results here.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Examples Tab -->
+            <div x-show="activeTab === 'examples'" class="space-y-6">
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-6">📚 Example Telemetry Data</h2>
+                    
+                    <div class="grid lg:grid-cols-2 gap-6">
+                        <template x-for="example in examples" :key="example.name">
+                            <div class="border border-gray-200 rounded-lg p-4">
+                                <h3 class="font-semibold text-gray-800 mb-2" x-text="example.name"></h3>
+                                <pre class="bg-gray-50 p-3 rounded text-sm font-mono overflow-x-auto" x-text="JSON.stringify(example.data, null, 2)"></pre>
+                                <button @click="useExample(example.data)" 
+                                        class="mt-3 bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors duration-200 text-sm">
+                                    Use This Example
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- MCP Integration Guide -->
+                <div class="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-6">🔌 MCP Client Integration Guide</h2>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-3">1. Install MCP Client</h3>
+                            <div class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm">
+                                npm install @karthiksivaramms/mcp-telemetry-client
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-3">2. Basic Usage</h3>
+                            <pre class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-x-auto">const { MCPClient } = require('@karthiksivaramms/mcp-telemetry-client');
+
+const client = new MCPClient({
+  ingestorUrl: 'https://your-app.azurecontainerapps.io',
+  authConfig: {
+    tenantId: 'your-tenant-id',
+    clientId: 'your-client-id'
+  }
+});
+
+// Send telemetry data
+await client.send({
+  timestamp: new Date().toISOString(),
+  source: 'my-app',
+  metric: 'user_action',
+  value: 1,
+  tags: { action: 'login', user_id: '123' }
+});</pre>
+                        </div>
+
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-3">3. Custom Plugins</h3>
+                            <pre class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-x-auto">// Create custom data transformation plugin
+client.use('normalize-data', (data) => {
+  return {
+    ...data,
+    timestamp: new Date(data.timestamp).toISOString(),
+    normalized: true
+  };
+});
+
+// Register error handling plugin
+client.use('error-handler', (data, error) => {
+  console.error('Telemetry error:', error);
+  // Implement retry logic or fallback
+});</pre>
+                        </div>
+
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-3">4. Batch Processing</h3>
+                            <pre class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-x-auto">// Configure batch settings
+client.configure({
+  batch: {
+    enabled: true,
+    size: 100,
+    timeout: 5000
+  }
+});
+
+// Data will be automatically batched
+for (let i = 0; i < 1000; i++) {
+  client.send(generateTelemetryData(i));
+}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function mcpTester() {
+            return {
+                activeTab: 'config',
+                connectionStatus: 'disconnected',
+                
+                config: {
+                    telemetryIngestorUrl: '',
+                    azureTenantId: '',
+                    azureClientId: '',
+                    fabricWorkspaceId: '',
+                    eventstreamName: '',
+                    testMode: false
+                },
+                
+                saving: false,
+                testing: false,
+                configMessage: '',
+                configSuccess: false,
+                
+                testData: '',
+                singleTesting: false,
+                batchTesting: false,
+                batchConfig: {
+                    size: 10,
+                    interval: 1000
+                },
+                
+                testResults: [],
+                examples: [],
+                
+                async init() {
+                    await this.loadExamples();
+                    this.loadExampleTelemetry();
+                },
+                
+                async saveConfiguration() {
+                    this.saving = true;
+                    this.configMessage = '';
+                    
+                    try {
+                        const response = await axios.post('/api/config', this.config);
+                        this.configMessage = 'Configuration saved successfully!';
+                        this.configSuccess = true;
+                        
+                        setTimeout(() => {
+                            this.configMessage = '';
+                        }, 3000);
+                    } catch (error) {
+                        this.configMessage = error.response?.data?.error || 'Failed to save configuration';
+                        this.configSuccess = false;
+                    } finally {
+                        this.saving = false;
+                    }
+                },
+                
+                async testConnection() {
+                    this.testing = true;
+                    this.connectionStatus = 'testing';
+                    
+                    try {
+                        const response = await axios.post('/api/test/health', {
+                            telemetryIngestorUrl: this.config.telemetryIngestorUrl
+                        });
+                        
+                        if (response.data.success) {
+                            this.connectionStatus = 'connected';
+                            this.testResults.unshift(response.data.result);
+                        } else {
+                            this.connectionStatus = 'disconnected';
+                            this.testResults.unshift(response.data.result);
+                        }
+                    } catch (error) {
+                        this.connectionStatus = 'disconnected';
+                        this.testResults.unshift({
+                            id: Date.now().toString(),
+                            type: 'health_check',
+                            timestamp: new Date().toISOString(),
+                            success: false,
+                            error: error.message
+                        });
+                    } finally {
+                        this.testing = false;
+                    }
+                },
+                
+                async sendSingleTest() {
+                    this.singleTesting = true;
+                    
+                    try {
+                        const telemetryData = JSON.parse(this.testData);
+                        const response = await axios.post('/api/test/ingest', {
+                            telemetryIngestorUrl: this.config.telemetryIngestorUrl,
+                            telemetryData
+                        });
+                        
+                        this.testResults.unshift(response.data.result);
+                    } catch (error) {
+                        const result = {
+                            id: Date.now().toString(),
+                            type: 'telemetry_ingest',
+                            timestamp: new Date().toISOString(),
+                            success: false,
+                            error: error.message
+                        };
+                        this.testResults.unshift(result);
+                    } finally {
+                        this.singleTesting = false;
+                    }
+                },
+                
+                async sendBatchTest() {
+                    this.batchTesting = true;
+                    
+                    try {
+                        const response = await axios.post('/api/test/batch', {
+                            telemetryIngestorUrl: this.config.telemetryIngestorUrl,
+                            batchSize: this.batchConfig.size,
+                            interval: this.batchConfig.interval
+                        });
+                        
+                        this.testResults.unshift(response.data.result);
+                    } catch (error) {
+                        const result = {
+                            id: Date.now().toString(),
+                            type: 'batch_test',
+                            timestamp: new Date().toISOString(),
+                            success: false,
+                            error: error.message
+                        };
+                        this.testResults.unshift(result);
+                    } finally {
+                        this.batchTesting = false;
+                    }
+                },
+                
+                async loadExamples() {
+                    try {
+                        const response = await axios.get('/api/examples/telemetry');
+                        this.examples = response.data.examples;
+                    } catch (error) {
+                        console.error('Failed to load examples:', error);
+                    }
+                },
+                
+                loadExampleConfig() {
+                    this.config = {
+                        telemetryIngestorUrl: 'https://your-app.azurecontainerapps.io',
+                        azureTenantId: '12345678-1234-1234-1234-123456789012',
+                        azureClientId: '87654321-4321-4321-4321-210987654321',
+                        fabricWorkspaceId: '11111111-2222-3333-4444-555555555555',
+                        eventstreamName: 'telemetry-stream',
+                        testMode: true
+                    };
+                },
+                
+                loadExampleTelemetry() {
+                    this.testData = JSON.stringify({
+                        timestamp: new Date().toISOString(),
+                        source: 'web-app',
+                        metric: 'page_views',
+                        value: 1,
+                        tags: {
+                            page: '/dashboard',
+                            user_id: '12345',
+                            session_id: 'sess_abc123'
+                        }
+                    }, null, 2);
+                },
+                
+                useExample(data) {
+                    this.testData = JSON.stringify(data, null, 2);
+                    this.activeTab = 'test';
+                },
+                
+                validateJson() {
+                    try {
+                        JSON.parse(this.testData);
+                        alert('✅ Valid JSON!');
+                    } catch (error) {
+                        alert('❌ Invalid JSON: ' + error.message);
+                    }
+                },
+                
+                async clearResults() {
+                    try {
+                        await axios.delete('/api/test/results');
+                        this.testResults = [];
+                    } catch (error) {
+                        console.error('Failed to clear results:', error);
+                    }
+                }
+            };
+        }
+    </script>
+</body>
+</html>
